@@ -12,15 +12,22 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Maximize Build Space & Swap
-        uses: easimon/maximize-build-space@v5
-        with:
-          root-reserve-mb: 2048
-          swap-size-mb: 4096
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
+      - name: Clean Space & Setup Swap (Safe Method)
+        run: |
+          echo "Membersihkan bloatware untuk mengosongkan ruang..."
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          
+          echo "Membuat Swap 4GB..."
+          sudo swapoff -a || true
+          sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
 
       - name: Pre-install Essential Tools
         run: |
@@ -79,3 +86,4 @@ jobs:
           format: markdown
           message: |
             🛑 *Sesi SSH GitHub Actions telah selesai/ditutup.*
+            
