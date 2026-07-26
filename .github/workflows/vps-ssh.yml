@@ -6,13 +6,12 @@ on:
 jobs:
   ssh-session:
     runs-on: ubuntu-latest
-    timeout-minutes: 360 # Batas maksimal GitHub Actions (6 jam)
+    timeout-minutes: 360
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. Bersihkan Disk Space & Tambah Swap (Sangat berguna untuk kompilasi)
       - name: Maximize Build Space & Swap
         uses: easimon/maximize-build-space@v5
         with:
@@ -23,13 +22,16 @@ jobs:
           remove-haskell: 'true'
           remove-codeql: 'true'
 
-      # 2. Pre-install Tool yang Sering Dipakai (Bisa ditambah sesuai kebutuhan)
       - name: Pre-install Essential Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y tmate htop speedtest-cli git aria2 curl wget zip unzip ccache fastfetch
+          sudo apt-get install -y tmate htop speedtest-cli git aria2 curl wget zip unzip ccache python3-pip
+          
+          # Install fastfetch via .deb resmi
+          curl -sL https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb -o fastfetch.deb
+          sudo dpkg -i fastfetch.deb
+          rm fastfetch.deb
 
-      # 3. Jalankan Tmate
       - name: Start Tmate Session
         run: |
           tmate -S /tmp/tmate.sock new-session -d
@@ -41,7 +43,6 @@ jobs:
           echo "SSH_CMD=$SSH_CMD" >> $GITHUB_ENV
           echo "WEB_URL=$WEB_URL" >> $GITHUB_ENV
 
-      # 4. Kirim Akses SSH ke Telegram
       - name: Send SSH Access to Telegram
         uses: appleboy/telegram-action@master
         with:
@@ -61,7 +62,6 @@ jobs:
             
             ⏱️ *Sesi aktif hingga kamu ketik `exit` atau batas 6 jam.*
 
-      # 5. Menjaga Sesi Tetap Hidup
       - name: Keep Workflow Alive
         run: |
           echo "Sesi SSH aktif. Menunggu koneksi..."
@@ -70,7 +70,6 @@ jobs:
           done
           echo "Sesi tmate telah ditutup."
 
-      # 6. Notifikasi Otomatis Saat Sesi Berakhir
       - name: Notify Session Ended
         if: always()
         uses: appleboy/telegram-action@master
@@ -80,4 +79,3 @@ jobs:
           format: markdown
           message: |
             🛑 *Sesi SSH GitHub Actions telah selesai/ditutup.*
-            
