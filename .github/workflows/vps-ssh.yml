@@ -1,4 +1,4 @@
-name: Interactive SSH Runner (JuiceSSH)
+name: Interactive SSH Runner (Termux/JuiceSSH)
 
 on:
   workflow_dispatch:
@@ -10,16 +10,41 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Maximize Disk Space & Swap
-        uses: easimon/maximize-build-space@v5
-        with:
-          swap-size-mb: 4096
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
+      - name: Install & Start Tmate
+        id: tmate
+        run: |
+          sudo apt-get update && sudo apt-get install -y tmate
+          tmate -S /tmp/tmate.sock new-session -d
+          tmate -S /tmp/tmate.sock wait tmate-ready
+          
+          # Ambil perintah SSH dan Web Terminal
+          SSH_CMD=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
+          WEB_URL=$(tmate -S /tmp/tmate.sock display -p '#{tmate_web}')
+          
+          echo "SSH_CMD=$SSH_CMD" >> $GITHUB_ENV
+          echo "WEB_URL=$WEB_URL" >> $GITHUB_ENV
 
-      - name: Setup Tmate SSH Session
-        uses: mxschmitt/action-tmate@v3
+      - name: Send SSH Access to Telegram
+        uses: appleboy/telegram-action@master
         with:
-          detached: false # Menjaga terminal tetap aktif & tidak langsung selesai
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🚀 *Sesi SSH GitHub Actions Siap!*
+            
+            📲 **Salin Perintah Ini ke Termux:**
+            ```bash
+            ${{ env.SSH_CMD }}
+            ```
+            
+            🌐 **Atau Akses via Web Browser:**
+            ${{ env.WEB_URL }}
+            
+            ⏱️ *Sesi akan aktif hingga kamu menghentikannya atau batas 6 jam.*
+
+      - name: Keep SSH Session Alive
+        run: |
+          # Menjaga sesi tetap berjalan di GitHub Actions
+          tmate -S /tmp/tmate.sock attach
           
