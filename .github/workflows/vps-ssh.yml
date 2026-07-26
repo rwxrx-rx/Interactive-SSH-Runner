@@ -6,27 +6,42 @@ on:
 jobs:
   ssh-session:
     runs-on: ubuntu-latest
+    timeout-minutes: 360 # Batas maksimal GitHub Actions (6 jam)
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install & Start Tmate
+      # 1. Bersihkan Disk Space & Tambah Swap (Sangat berguna untuk kompilasi)
+      - name: Maximize Build Space & Swap
+        uses: easimon/maximize-build-space@v5
+        with:
+          root-reserve-mb: 2048
+          swap-size-mb: 4096
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+
+      # 2. Pre-install Tool yang Sering Dipakai (Bisa ditambah sesuai kebutuhan)
+      - name: Pre-install Essential Tools
         run: |
-          sudo apt-get update && sudo apt-get install -y tmate
+          sudo apt-get update
+          sudo apt-get install -y tmate htop speedtest-cli git aria2 curl wget zip unzip ccache fastfetch
+
+      # 3. Jalankan Tmate
+      - name: Start Tmate Session
+        run: |
           tmate -S /tmp/tmate.sock new-session -d
           tmate -S /tmp/tmate.sock wait tmate-ready
           
-          # Ambil perintah SSH dan Web Terminal
           SSH_CMD=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
           WEB_URL=$(tmate -S /tmp/tmate.sock display -p '#{tmate_web}')
           
-          echo "SSH_CMD=$SSH_CMD"
-          echo "WEB_URL=$WEB_URL"
-          
-          # Simpan ke environment variables GitHub Actions
           echo "SSH_CMD=$SSH_CMD" >> $GITHUB_ENV
           echo "WEB_URL=$WEB_URL" >> $GITHUB_ENV
 
+      # 4. Kirim Akses SSH ke Telegram
       - name: Send SSH Access to Telegram
         uses: appleboy/telegram-action@master
         with:
@@ -44,14 +59,25 @@ jobs:
             🌐 **Atau Akses via Web Browser:**
             ${{ env.WEB_URL }}
             
-            ⏱️ *Sesi akan aktif hingga kamu menutup sesi (`exit`) atau batas waktu 6 jam.*
+            ⏱️ *Sesi aktif hingga kamu ketik `exit` atau batas 6 jam.*
 
+      # 5. Menjaga Sesi Tetap Hidup
       - name: Keep Workflow Alive
         run: |
-          echo "Sesi SSH aktif. Menunggu koneksi atau hingga kamu menutup sesi..."
-          # Looping untuk mengecek apakah sesi tmate masih hidup tanpa butuh TTY
+          echo "Sesi SSH aktif. Menunggu koneksi..."
           while tmate -S /tmp/tmate.sock has-session 2>/dev/null; do
             sleep 10
           done
           echo "Sesi tmate telah ditutup."
-          
+
+      # 6. Notifikasi Otomatis Saat Sesi Berakhir
+      - name: Notify Session Ended
+        if: always()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🛑 *Sesi SSH GitHub Actions telah selesai/ditutup.*
+            
