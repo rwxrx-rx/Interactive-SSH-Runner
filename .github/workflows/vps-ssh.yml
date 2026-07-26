@@ -11,7 +11,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install & Start Tmate
-        id: tmate
         run: |
           sudo apt-get update && sudo apt-get install -y tmate
           tmate -S /tmp/tmate.sock new-session -d
@@ -21,6 +20,10 @@ jobs:
           SSH_CMD=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
           WEB_URL=$(tmate -S /tmp/tmate.sock display -p '#{tmate_web}')
           
+          echo "SSH_CMD=$SSH_CMD"
+          echo "WEB_URL=$WEB_URL"
+          
+          # Simpan ke environment variables GitHub Actions
           echo "SSH_CMD=$SSH_CMD" >> $GITHUB_ENV
           echo "WEB_URL=$WEB_URL" >> $GITHUB_ENV
 
@@ -41,10 +44,14 @@ jobs:
             🌐 **Atau Akses via Web Browser:**
             ${{ env.WEB_URL }}
             
-            ⏱️ *Sesi akan aktif hingga kamu menghentikannya atau batas 6 jam.*
+            ⏱️ *Sesi akan aktif hingga kamu menutup sesi (`exit`) atau batas waktu 6 jam.*
 
-      - name: Keep SSH Session Alive
+      - name: Keep Workflow Alive
         run: |
-          # Menjaga sesi tetap berjalan di GitHub Actions
-          tmate -S /tmp/tmate.sock attach
+          echo "Sesi SSH aktif. Menunggu koneksi atau hingga kamu menutup sesi..."
+          # Looping untuk mengecek apakah sesi tmate masih hidup tanpa butuh TTY
+          while tmate -S /tmp/tmate.sock has-session 2>/dev/null; do
+            sleep 10
+          done
+          echo "Sesi tmate telah ditutup."
           
