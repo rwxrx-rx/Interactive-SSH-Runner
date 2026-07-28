@@ -32,21 +32,52 @@ jobs:
       - name: Pre-install Essential Tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y tmux htop speedtest-cli git aria2 curl wget zip unzip ccache python3-pip
+          sudo apt-get install -y tmux htop speedtest-cli git aria2 curl wget zip unzip ccache python3-pip file
           
           # Install fastfetch via .deb resmi
           curl -sL https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb -o fastfetch.deb
           sudo dpkg -i fastfetch.deb
-          rm fastfetch.deb
+          rm -f fastfetch.deb
 
       - name: Setup & Start Upterm Session
         run: |
-          echo "Mendownload Upterm CLI..."
-          curl -sL "https://github.com/upterm/upterm/releases/latest/download/upterm_linux_amd64.tar.gz" -o upterm.tar.gz
-          tar -xzf upterm.tar.gz
-          sudo mv upterm /usr/local/bin/
-          sudo chmod +x /usr/local/bin/upterm
-          rm -f upterm.tar.gz
+          echo "Memeriksa dan mendownload Upterm CLI..."
+          
+          # 1. Ambil tag rilis terbaru via HTTP Redirect (tanpa API rate limit)
+          LATEST_TAG=$(curl -sI https://github.com/upterm/upterm/releases/latest | grep -i "^location:" | sed -E 's/.*\/tag\/([^ \r\n]+).*/\1/')
+          VERSION=$(echo "$LATEST_TAG" | sed 's/^v//')
+
+          echo "Versi Upterm terdeteksi: $LATEST_TAG"
+
+          # 2. Daftar kemungkinan nama file rilis
+          URLS=(
+            "https://github.com/upterm/upterm/releases/download/${LATEST_TAG}/upterm_linux_amd64.tar.gz"
+            "https://github.com/upterm/upterm/releases/download/${LATEST_TAG}/upterm_${VERSION}_linux_amd64.tar.gz"
+            "https://github.com/upterm/upterm/releases/download/${LATEST_TAG}/upterm_v${VERSION}_linux_amd64.tar.gz"
+          )
+
+          SUCCESS=false
+          for url in "${URLS[@]}"; do
+            echo "Mencoba unduh dari: $url"
+            curl -sL "$url" -o upterm.tar.gz
+            if file upterm.tar.gz | grep -q 'gzip compressed'; then
+              tar -xzf upterm.tar.gz
+              sudo mv upterm /usr/local/bin/
+              sudo chmod +x /usr/local/bin/upterm
+              rm -f upterm.tar.gz
+              SUCCESS=true
+              echo "Berhasil menginstal Upterm biner!"
+              break
+            fi
+          done
+
+          # 3. Fallback: kompilasi via Go jika semua URL biner gagal
+          if [ "$SUCCESS" = false ]; then
+            echo "Gagal mengunduh biner langsung, melakukan fallback via 'go install'..."
+            go install github.com/upterm/upterm/cmd/upterm@latest
+            sudo cp ~/go/bin/upterm /usr/local/bin/
+            sudo chmod +x /usr/local/bin/upterm
+          fi
 
           echo "Membuat SSH Key untuk Upterm..."
           mkdir -p ~/.ssh
@@ -55,11 +86,16 @@ jobs:
           echo "Menjalankan Upterm di latar belakang (tmux)..."
           tmux new-session -d -s upterm "upterm host --server ssh://uptermd.upterm.dev:22 -- bash"
 
-          # Menunggu Upterm membuat sesi dan mendapatkan URL SSH
-          sleep 5
-          
-          SSH_CMD=$(tmux capture-pane -pt upterm | grep "SSH Session:" | cut -d':' -f2- | xargs)
-          
+          # 4. Tunggu sesi Upterm siap (maksimal 15 detik)
+          SSH_CMD=""
+          for i in {1..15}; do
+            sleep 1
+            SSH_CMD=$(tmux capture-pane -pt upterm | grep "SSH Session:" | cut -d':' -f2- | xargs)
+            if [ -n "$SSH_CMD" ]; then
+              break
+            fi
+          done
+
           if [ -z "$SSH_CMD" ]; then
             echo "Error: Gagal mendapatkan perintah SSH dari Upterm!"
             tmux capture-pane -pt upterm
