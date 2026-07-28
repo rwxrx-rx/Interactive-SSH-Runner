@@ -42,10 +42,11 @@ jobs:
       - name: Setup & Start Upterm Session
         run: |
           echo "Mendownload Upterm CLI..."
-          UPTERM_VERSION=$(curl -s https://api.github.com/repos/upterm/upterm/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-          curl -sL "https://github.com/upterm/upterm/releases/download/${UPTERM_VERSION}/upterm_linux_amd64.tar.gz" | tar -xz
+          curl -sL "https://github.com/upterm/upterm/releases/latest/download/upterm_linux_amd64.tar.gz" -o upterm.tar.gz
+          tar -xzf upterm.tar.gz
           sudo mv upterm /usr/local/bin/
-          chmod +x /usr/local/bin/upterm
+          sudo chmod +x /usr/local/bin/upterm
+          rm -f upterm.tar.gz
 
           echo "Membuat SSH Key untuk Upterm..."
           mkdir -p ~/.ssh
