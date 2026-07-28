@@ -1,0 +1,105 @@
+name: Interactive SSH Runner (Upterm - Termux/JuiceSSH)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ssh-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Clean Space & Setup Swap (Safe Method)
+        run: |
+          echo "Membersihkan bloatware untuk mengosongkan ruang..."
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          
+          echo "Membuat Swap 4GB..."
+          sudo swapoff -a || true
+          sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+
+      - name: Pre-install Essential Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux htop speedtest-cli git aria2 curl wget zip unzip ccache python3-pip
+          
+          # Install fastfetch via .deb resmi
+          curl -sL https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb -o fastfetch.deb
+          sudo dpkg -i fastfetch.deb
+          rm fastfetch.deb
+
+      - name: Setup & Start Upterm Session
+        run: |
+          echo "Mendownload Upterm CLI..."
+          UPTERM_VERSION=$(curl -s https://api.github.com/repos/upterm/upterm/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          curl -sL "https://github.com/upterm/upterm/releases/download/${UPTERM_VERSION}/upterm_linux_amd64.tar.gz" | tar -xz
+          sudo mv upterm /usr/local/bin/
+          chmod +x /usr/local/bin/upterm
+
+          echo "Membuat SSH Key untuk Upterm..."
+          mkdir -p ~/.ssh
+          ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
+
+          echo "Menjalankan Upterm di latar belakang (tmux)..."
+          tmux new-session -d -s upterm "upterm host --server ssh://uptermd.upterm.dev:22 -- bash"
+
+          # Menunggu Upterm membuat sesi dan mendapatkan URL SSH
+          sleep 5
+          
+          SSH_CMD=$(tmux capture-pane -pt upterm | grep "SSH Session:" | cut -d':' -f2- | xargs)
+          
+          if [ -z "$SSH_CMD" ]; then
+            echo "Error: Gagal mendapatkan perintah SSH dari Upterm!"
+            tmux capture-pane -pt upterm
+            exit 1
+          fi
+
+          echo "SSH_CMD=$SSH_CMD" >> $GITHUB_ENV
+          echo "Perintah SSH Upterm: $SSH_CMD"
+
+      - name: Send SSH Access to Telegram
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🚀 *Sesi SSH Upterm GitHub Actions Siap!*
+            
+            📲 **Salin Perintah Ini ke Termux / JuiceSSH:**
+            ```bash
+            ${{ env.SSH_CMD }}
+            ```
+            
+            💡 *Server: Upterm Relay (Lebih Stabil & Jarang Drop)*
+            ⏱️ *Sesi aktif hingga kamu ketik `exit` atau batas 6 jam.*
+
+      - name: Keep Workflow Alive
+        run: |
+          echo "Sesi Upterm aktif. Menunggu koneksi..."
+          while tmux has-session -t upterm 2>/dev/null; do
+            sleep 10
+          done
+          echo "Sesi Upterm telah ditutup."
+
+      - name: Notify Session Ended
+        if: always()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🛑 *Sesi SSH Upterm GitHub Actions telah selesai/ditutup.*
+            
