@@ -30,19 +30,29 @@ jobs:
           sudo swapon /swapfile
 
       - name: Pre-install Essential Tools
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y tmate htop speedtest-cli git aria2 curl wget zip unzip ccache python3-pip
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tmate htop speedtest-cli git aria2 curl wget zip unzip ccache python3-pip
           
-          # Install fastfetch via .deb resmi
-          curl -sL https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb -o fastfetch.deb
-          sudo dpkg -i fastfetch.deb
-          rm fastfetch.deb
+          # Unduh fastfetch dengan opsi -fsSL untuk memastikan error tertangkap jika link broken
+          if curl -fsSL https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb -o fastfetch.deb; then
+            sudo dpkg -i fastfetch.deb || sudo apt-get install -f -y
+            rm -f fastfetch.deb
+          else
+            echo "⚠️ Gagal mengunduh fastfetch, melewati instalasi fastfetch."
+          fi
 
       - name: Start Tmate Session
         run: |
           tmate -S /tmp/tmate.sock new-session -d
-          tmate -S /tmp/tmate.sock wait tmate-ready
+          
+          echo "Menunggu koneksi tmate server siap..."
+          if ! tmate -S /tmp/tmate.sock wait tmate-ready; then
+            echo "❌ Gagal menghubungkan ke server tmate."
+            exit 1
+          fi
           
           SSH_CMD=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
           WEB_URL=$(tmate -S /tmp/tmate.sock display -p '#{tmate_web}')
@@ -50,8 +60,15 @@ jobs:
           echo "SSH_CMD=$SSH_CMD" >> $GITHUB_ENV
           echo "WEB_URL=$WEB_URL" >> $GITHUB_ENV
 
+          # Tampilkan juga di GitHub Summary sebagai fallback jika Telegram error
+          echo "### 🚀 SSH Session Ready" >> $GITHUB_STEP_SUMMARY
+          echo "```bash" >> $GITHUB_STEP_SUMMARY
+          echo "$SSH_CMD" >> $GITHUB_STEP_SUMMARY
+          echo "```" >> $GITHUB_STEP_SUMMARY
+          echo "[Web Terminal]($WEB_URL)" >> $GITHUB_STEP_SUMMARY
+
       - name: Send SSH Access to Telegram
-        uses: appleboy/telegram-action@master
+        uses: appleboy/telegram-action@v1.1.1
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -79,11 +96,10 @@ jobs:
 
       - name: Notify Session Ended
         if: always()
-        uses: appleboy/telegram-action@master
+        uses: appleboy/telegram-action@v1.1.1
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: markdown
           message: |
             🛑 *Sesi SSH GitHub Actions telah selesai/ditutup.*
-            
